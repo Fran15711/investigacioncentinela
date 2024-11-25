@@ -21,7 +21,9 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
     <script>
-        const url = 'https://github.com/Fran15711/prueba1/blob/main/ACL_Benchmark_SEP_2022.pptx.pdf';
+        const url = '
+            https://raw.githubusercontent.com/Fran15711/prueba1/main/ACL_Benchmark_SEP_2022.pptx.pdf
+';
         const container = document.getElementById('pdf-container');
 
         pdfjsLib.getDocument(url).promise.then((pdf) => {

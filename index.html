@@ -13,8 +13,6 @@
 
         #pdf-container {
             width: 100%;
-            height: 100vh; /* Ocupa toda la ventana */
-            overflow-y: auto; /* Permite scroll */
             background-color: #f0f0f0;
         }
 
@@ -23,8 +21,8 @@
             margin: 20px auto;
             background-color: white;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-            width: 100%; /* El canvas ocupa el 100% del ancho disponible */
-            height: auto; /* Mantiene la proporción */
+            width: 100%; /* Ancho completo */
+            height: auto; /* Proporciones automáticas */
         }
 
         #loading {
@@ -72,85 +70,43 @@
         const container = document.getElementById('pdf-container');
         const loadingIndicator = document.getElementById('loading');
         const progressBar = document.getElementById('progress');
-        const pageCache = {}; // Cache para páginas renderizadas
-        let pdfDoc = null;
-        let isRendering = false; // Para evitar conflictos de renderizado simultáneo
-        let pagesInView = []; // Para llevar un registro de las páginas que se están renderizando
         const url = 'https://raw.githubusercontent.com/Fran15711/prueba1/main/ACL_Benchmark_SEP_2022.pptx.pdf'; // URL del PDF
 
-        // Escalar dinámicamente el PDF según el ancho de la ventana
+        let pdfDoc = null;
+
+        // Obtener la escala de cada página según el ancho del contenedor
         const getScale = (page) => {
-            const scale = container.offsetWidth / page.getViewport({ scale: 1 }).width;
-            return scale;
+            return container.offsetWidth / page.getViewport({ scale: 1 }).width;
         };
 
-        // Renderizar una página específica
-        const renderPage = async (pageNumber) => {
-            if (pageCache[pageNumber]) return; // Si ya está renderizada, no hacer nada
-
-            const page = await pdfDoc.getPage(pageNumber);
-            const scale = getScale(page);
-            const viewport = page.getViewport({ scale });
-
-            const canvas = document.createElement('canvas');
-            canvas.id = `page-${pageNumber}`;
-            const context = canvas.getContext('2d');
-
-            // Ajustar tamaño del canvas
-            canvas.width = viewport.width * window.devicePixelRatio;
-            canvas.height = viewport.height * window.devicePixelRatio;
-            canvas.style.width = `${viewport.width}px`;
-            canvas.style.height = `${viewport.height}px`;
-
-            context.scale(window.devicePixelRatio, window.devicePixelRatio);
-
-            // Renderizar la página
-            await page.render({ canvasContext: context, viewport }).promise;
-
-            // Guardar en caché y agregar al DOM
-            pageCache[pageNumber] = canvas;
-            container.appendChild(canvas);
-        };
-
-        // Verifica qué páginas están visibles
-        const getVisiblePages = () => {
-            const containerTop = container.scrollTop;
-            const containerBottom = containerTop + container.clientHeight;
-
-            const visiblePages = [];
-            let currentHeight = 0;
-
+        // Renderizar TODAS las páginas del PDF
+        const renderAllPages = async () => {
             for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber++) {
-                const pageHeight = pageCache[pageNumber]?.clientHeight || 1000; // Altura de la página
+                const page = await pdfDoc.getPage(pageNumber);
+                const scale = getScale(page);
+                const viewport = page.getViewport({ scale });
 
-                if (
-                    (currentHeight + pageHeight >= containerTop) &&
-                    (currentHeight <= containerBottom + 20) // Se cargan algunas páginas cercanas
-                ) {
-                    visiblePages.push(pageNumber);
-                }
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
 
-                currentHeight += pageHeight + 20; // Separación entre páginas
+                // Configurar el tamaño del canvas según la densidad de píxeles
+                const outputScale = window.devicePixelRatio || 1;
+                canvas.width = Math.floor(viewport.width * outputScale);
+                canvas.height = Math.floor(viewport.height * outputScale);
+                canvas.style.width = `${viewport.width}px`;
+                canvas.style.height = `${viewport.height}px`;
+
+                context.scale(outputScale, outputScale);
+
+                // Renderizar la página en el canvas
+                await page.render({ canvasContext: context, viewport }).promise;
+
+                // Agregar la página renderizada al contenedor
+                container.appendChild(canvas);
             }
 
-            return visiblePages;
-        };
-
-        // Renderizar las páginas visibles
-        const renderVisiblePages = async () => {
-            if (isRendering) return; // Evitar conflictos de renderizado simultáneo
-            isRendering = true;
-
-            const visiblePages = getVisiblePages();
-            const pagesToRender = visiblePages.filter(pageNumber => !pagesInView.includes(pageNumber));
-
-            // Si hay páginas nuevas para renderizar, las agregamos
-            for (const pageNumber of pagesToRender) {
-                pagesInView.push(pageNumber); // Marcamos esta página como en vista
-                await renderPage(pageNumber);
-            }
-
-            isRendering = false;
+            // Ocultar el indicador de carga
+            loadingIndicator.style.display = 'none';
         };
 
         // Cargar el PDF
@@ -164,24 +120,7 @@
                     }
                 }).promise;
 
-                // Ocultar el indicador de carga
-                loadingIndicator.style.display = 'none';
-
-                // Renderizar las páginas visibles iniciales
-                renderVisiblePages();
-
-                // Escuchar el evento de scroll para renderizado progresivo
-                container.addEventListener('scroll', () => {
-                    requestAnimationFrame(renderVisiblePages);
-                });
-
-                // Volver a renderizar al cambiar tamaño de ventana (responsividad)
-                window.addEventListener('resize', () => {
-                    pageCache = {}; // Limpiar el caché de las páginas
-                    pagesInView = []; // Limpiar las páginas en vista
-                    container.innerHTML = ''; // Limpiar el contenedor
-                    renderVisiblePages(); // Renderizar de nuevo
-                });
+                renderAllPages();
             } catch (error) {
                 console.error('Error al cargar el PDF:', error);
                 loadingIndicator.innerText = 'Error al cargar el PDF.';

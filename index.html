@@ -24,52 +24,14 @@
             width: 100%; /* Ancho completo */
             height: auto; /* Proporciones automáticas */
         }
-
-        #loading {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background-color: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 15px;
-            border-radius: 5px;
-            font-size: 1rem;
-            z-index: 1000;
-        }
-
-        .progress-bar {
-            margin-top: 10px;
-            width: 100%;
-            height: 10px;
-            background-color: #ddd;
-            border-radius: 5px;
-            overflow: hidden;
-        }
-
-        .progress-bar span {
-            display: block;
-            height: 100%;
-            background-color: #4caf50;
-            width: 0;
-        }
     </style>
 </head>
 <body>
-    <div id="loading">
-        Cargando PDF...
-        <div class="progress-bar">
-            <span id="progress"></span>
-        </div>
-    </div>
-
     <div id="pdf-container"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
     <script>
         const container = document.getElementById('pdf-container');
-        const loadingIndicator = document.getElementById('loading');
-        const progressBar = document.getElementById('progress');
         const url = 'https://raw.githubusercontent.com/Fran15711/prueba1/main/ACL_Benchmark_SEP_2022.pptx.pdf'; // URL del PDF
 
         let pdfDoc = null;
@@ -104,26 +66,15 @@
                 // Agregar la página renderizada al contenedor
                 container.appendChild(canvas);
             }
-
-            // Ocultar el indicador de carga
-            loadingIndicator.style.display = 'none';
         };
 
         // Cargar el PDF
         const loadPDF = async () => {
             try {
-                pdfDoc = await pdfjsLib.getDocument({
-                    url,
-                    onProgress: (progress) => {
-                        const percent = (progress.loaded / progress.total) * 100;
-                        progressBar.style.width = `${percent}%`;
-                    }
-                }).promise;
-
+                pdfDoc = await pdfjsLib.getDocument(url).promise;
                 renderAllPages();
             } catch (error) {
                 console.error('Error al cargar el PDF:', error);
-                loadingIndicator.innerText = 'Error al cargar el PDF.';
             }
         };
 
@@ -132,3 +83,4 @@
     </script>
 </body>
 </html>
+

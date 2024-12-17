@@ -9,7 +9,6 @@
             width: 100%;
             height: 100vh; /* Ocupar toda la ventana */
             overflow-y: auto; /* Permitir scroll */
-            padding: 20px;
             background-color: #f0f0f0;
         }
 
@@ -18,6 +17,8 @@
             margin: 20px auto;
             background-color: white;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            width: 100%; /* Ocupa el 100% del ancho disponible */
+            height: auto; /* Mantiene la proporción */
         }
 
         #loading {
@@ -62,23 +63,31 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
     <script>
-        const url = 'https://raw.githubusercontent.com/Fran15711/prueba1/main/ACL_Benchmark_SEP_2022.pptx.pdf';
         const container = document.getElementById('pdf-container');
         const loadingIndicator = document.getElementById('loading');
         const progressBar = document.getElementById('progress');
         const pageCache = {}; // Cache para páginas renderizadas
+        const pagesRendered = new Set(); // Controlar qué páginas ya se renderizaron
         let pdfDoc = null;
+
+        const url = 'https://raw.githubusercontent.com/Fran15711/prueba1/main/ACL_Benchmark_SEP_2022.pptx.pdf'; // URL del PDF
 
         // Renderizar una página específica
         const renderPage = async (pageNumber) => {
-            if (pageCache[pageNumber]) return; // No renderizar si ya está en cache
+            if (pagesRendered.has(pageNumber)) return; // Si ya está renderizada, no hacer nada
+
+            pagesRendered.add(pageNumber); // Marcar página como renderizada
 
             const page = await pdfDoc.getPage(pageNumber);
-            const viewport = page.getViewport({ scale: 1 });
+
+            // Ajustar escala dinámica para que el ancho del PDF se adapte al contenedor
+            const viewport = page.getViewport({ scale: container.offsetWidth / page.getViewport({ scale: 1 }).width });
+
             const canvas = document.createElement('canvas');
+            canvas.id = `page-${pageNumber}`;
             const context = canvas.getContext('2d');
 
-            // Ajustar tamaño del canvas según la relación de aspecto
+            // Ajustar tamaño del canvas
             canvas.width = viewport.width * window.devicePixelRatio;
             canvas.height = viewport.height * window.devicePixelRatio;
             canvas.style.width = `${viewport.width}px`;
@@ -89,18 +98,17 @@
             // Renderizar la página
             await page.render({ canvasContext: context, viewport }).promise;
 
-            pageCache[pageNumber] = canvas; // Guardar en cache
-            container.appendChild(canvas); // Agregar al DOM
+            // Guardar en caché y agregar al DOM
+            pageCache[pageNumber] = canvas;
+            container.appendChild(canvas);
         };
 
-        // Identificar páginas visibles
-        const getVisiblePages = () => {
+        // Renderizar las páginas visibles
+        const renderVisiblePages = () => {
             const containerTop = container.scrollTop;
-            const containerBottom = containerTop + container.offsetHeight;
+            const containerBottom = containerTop + container.clientHeight;
 
-            const visiblePages = [];
             let currentHeight = 0;
-
             for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber++) {
                 const pageHeight = pageCache[pageNumber]?.clientHeight || 1000;
 
@@ -108,50 +116,48 @@
                     (currentHeight + pageHeight >= containerTop) &&
                     (currentHeight <= containerBottom)
                 ) {
-                    visiblePages.push(pageNumber);
+                    renderPage(pageNumber);
                 }
 
                 currentHeight += pageHeight + 20; // Separación entre páginas
-            }
-
-            return visiblePages;
-        };
-
-        // Renderizar páginas visibles
-        const renderVisiblePages = async () => {
-            const visiblePages = getVisiblePages();
-            for (const pageNumber of visiblePages) {
-                renderPage(pageNumber);
             }
         };
 
         // Cargar el PDF
         const loadPDF = async () => {
-            pdfDoc = await pdfjsLib.getDocument({ url, onProgress: updateProgress }).promise;
+            try {
+                pdfDoc = await pdfjsLib.getDocument({
+                    url,
+                    onProgress: (progress) => {
+                        const percent = (progress.loaded / progress.total) * 100;
+                        progressBar.style.width = `${percent}%`;
+                    }
+                }).promise;
 
-            // Ocultar el indicador de carga cuando el documento esté listo
-            loadingIndicator.style.display = 'none';
+                // Ocultar el indicador de carga
+                loadingIndicator.style.display = 'none';
 
-            // Renderizar la primera página para dar feedback inmediato
-            renderPage(1);
+                // Renderizar las páginas visibles iniciales
+                renderVisiblePages();
 
-            // Escuchar eventos de scroll para renderizado progresivo
-            container.addEventListener('scroll', () => {
-                requestAnimationFrame(renderVisiblePages);
-            });
+                // Escuchar el evento de scroll para renderizado progresivo
+                container.addEventListener('scroll', () => {
+                    requestAnimationFrame(renderVisiblePages);
+                });
 
-            // Renderizar las páginas iniciales visibles
-            renderVisiblePages();
+                // Volver a renderizar al cambiar tamaño de ventana (responsividad)
+                window.addEventListener('resize', () => {
+                    pagesRendered.clear();
+                    container.innerHTML = '';
+                    renderVisiblePages();
+                });
+            } catch (error) {
+                console.error('Error al cargar el PDF:', error);
+                loadingIndicator.innerText = 'Error al cargar el PDF.';
+            }
         };
 
-        // Actualizar barra de progreso
-        const updateProgress = (progressData) => {
-            const percent = (progressData.loaded / progressData.total) * 100;
-            progressBar.style.width = percent + '%';
-        };
-
-        // Mostrar el indicador de carga y cargar el PDF
-        loadingIndicator.style.display = 'block';
+        // Inicializar el visor de PDF
         loadPDF();
     </script>
 </body>

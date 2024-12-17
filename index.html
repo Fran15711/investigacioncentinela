@@ -74,7 +74,8 @@
         const progressBar = document.getElementById('progress');
         const pageCache = {}; // Cache para páginas renderizadas
         let pdfDoc = null;
-
+        let isRendering = false; // Para evitar conflictos de renderizado simultáneo
+        let pagesInView = []; // Para llevar un registro de las páginas que se están renderizando
         const url = 'https://raw.githubusercontent.com/Fran15711/prueba1/main/ACL_Benchmark_SEP_2022.pptx.pdf'; // URL del PDF
 
         // Escalar dinámicamente el PDF según el ancho de la ventana
@@ -111,24 +112,45 @@
             container.appendChild(canvas);
         };
 
-        // Renderizar las páginas visibles
-        const renderVisiblePages = () => {
+        // Verifica qué páginas están visibles
+        const getVisiblePages = () => {
             const containerTop = container.scrollTop;
             const containerBottom = containerTop + container.clientHeight;
 
+            const visiblePages = [];
             let currentHeight = 0;
+
             for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber++) {
-                const pageHeight = pageCache[pageNumber]?.clientHeight || 1000;
+                const pageHeight = pageCache[pageNumber]?.clientHeight || 1000; // Altura de la página
 
                 if (
                     (currentHeight + pageHeight >= containerTop) &&
-                    (currentHeight <= containerBottom)
+                    (currentHeight <= containerBottom + 20) // Se cargan algunas páginas cercanas
                 ) {
-                    renderPage(pageNumber);
+                    visiblePages.push(pageNumber);
                 }
 
                 currentHeight += pageHeight + 20; // Separación entre páginas
             }
+
+            return visiblePages;
+        };
+
+        // Renderizar las páginas visibles
+        const renderVisiblePages = async () => {
+            if (isRendering) return; // Evitar conflictos de renderizado simultáneo
+            isRendering = true;
+
+            const visiblePages = getVisiblePages();
+            const pagesToRender = visiblePages.filter(pageNumber => !pagesInView.includes(pageNumber));
+
+            // Si hay páginas nuevas para renderizar, las agregamos
+            for (const pageNumber of pagesToRender) {
+                pagesInView.push(pageNumber); // Marcamos esta página como en vista
+                await renderPage(pageNumber);
+            }
+
+            isRendering = false;
         };
 
         // Cargar el PDF
@@ -156,6 +178,7 @@
                 // Volver a renderizar al cambiar tamaño de ventana (responsividad)
                 window.addEventListener('resize', () => {
                     pageCache = {}; // Limpiar el caché de las páginas
+                    pagesInView = []; // Limpiar las páginas en vista
                     container.innerHTML = ''; // Limpiar el contenedor
                     renderVisiblePages(); // Renderizar de nuevo
                 });

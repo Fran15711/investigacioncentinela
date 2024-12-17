@@ -5,40 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF Viewer</title>
     <style>
-        /* Estilos comunes */
         #pdf-container {
             width: 100%;
-            overflow-y: auto;
+            height: 100vh; /* Ocupar toda la ventana */
+            overflow-y: auto; /* Permitir scroll */
             padding: 20px;
+            background-color: #f0f0f0;
         }
+
         canvas {
             display: block;
-            margin: 10px 0;
-            width: 100%;  /* El canvas siempre ocupa el 100% del contenedor */
+            margin: 20px auto;
+            background-color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
         }
 
-        /* Estilo para pantallas grandes */
-        @media (min-width: 1001px) {
-            canvas {
-                max-width: 100%;
-                height: auto;
-            }
-        }
-
-        /* Estilo para pantallas con un ancho máximo de 1000px (móviles y pantallas pequeñas) */
-        @media (max-width: 1000px) {
-            #pdf-container {
-                max-width: 1000px;
-                margin: 0 auto; /* Centra el contenedor */
-            }
-            canvas {
-                max-width: 1000px;
-                height: auto;
-                margin: 0 auto; /* Centra el canvas */
-            }
-        }
-
-        /* Estilo para el indicador de carga */
         #loading {
             position: fixed;
             top: 50%;
@@ -48,13 +29,17 @@
             color: white;
             padding: 15px;
             border-radius: 5px;
-            display: none;
+            font-size: 1rem;
+            z-index: 1000;
         }
 
         .progress-bar {
+            margin-top: 10px;
             width: 100%;
             height: 10px;
             background-color: #ddd;
+            border-radius: 5px;
+            overflow: hidden;
         }
 
         .progress-bar span {
@@ -67,8 +52,10 @@
 </head>
 <body>
     <div id="loading">
-        Cargando PDF... <br>
-        <div class="progress-bar"><span id="progress"></span></div>
+        Cargando PDF...
+        <div class="progress-bar">
+            <span id="progress"></span>
+        </div>
     </div>
 
     <div id="pdf-container"></div>
@@ -79,51 +66,93 @@
         const container = document.getElementById('pdf-container');
         const loadingIndicator = document.getElementById('loading');
         const progressBar = document.getElementById('progress');
+        const pageCache = {}; // Cache para páginas renderizadas
+        let pdfDoc = null;
 
-        const renderPage = (page, scale) => {
-            const viewport = page.getViewport({ scale });
+        // Renderizar una página específica
+        const renderPage = async (pageNumber) => {
+            if (pageCache[pageNumber]) return; // No renderizar si ya está en cache
 
+            const page = await pdfDoc.getPage(pageNumber);
+            const viewport = page.getViewport({ scale: 1 });
             const canvas = document.createElement('canvas');
-            container.appendChild(canvas);
-
             const context = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
 
-            page.render({
-                canvasContext: context,
-                viewport: viewport
-            });
+            // Ajustar tamaño del canvas según la relación de aspecto
+            canvas.width = viewport.width * window.devicePixelRatio;
+            canvas.height = viewport.height * window.devicePixelRatio;
+            canvas.style.width = `${viewport.width}px`;
+            canvas.style.height = `${viewport.height}px`;
+
+            context.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+            // Renderizar la página
+            await page.render({ canvasContext: context, viewport }).promise;
+
+            pageCache[pageNumber] = canvas; // Guardar en cache
+            container.appendChild(canvas); // Agregar al DOM
         };
 
-        const renderPDF = (pdf) => {
-            const totalPages = pdf.numPages;
-            const maxWidth = 1000; // Limitar el tamaño máximo a 1000px
-            const scaleFactor = Math.min(window.innerWidth, maxWidth) / maxWidth;
+        // Identificar páginas visibles
+        const getVisiblePages = () => {
+            const containerTop = container.scrollTop;
+            const containerBottom = containerTop + container.offsetHeight;
 
-            // Renderizar cada página
-            for (let pageNumber = 1; pageNumber <= totalPages; pageNumber++) {
-                pdf.getPage(pageNumber).then((page) => {
-                    const scale = Math.min(scaleFactor, 1); // Escala máxima 1 (sin que se pixelee)
-                    renderPage(page, scale);
-                });
+            const visiblePages = [];
+            let currentHeight = 0;
+
+            for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber++) {
+                const pageHeight = pageCache[pageNumber]?.clientHeight || 1000;
+
+                if (
+                    (currentHeight + pageHeight >= containerTop) &&
+                    (currentHeight <= containerBottom)
+                ) {
+                    visiblePages.push(pageNumber);
+                }
+
+                currentHeight += pageHeight + 20; // Separación entre páginas
+            }
+
+            return visiblePages;
+        };
+
+        // Renderizar páginas visibles
+        const renderVisiblePages = async () => {
+            const visiblePages = getVisiblePages();
+            for (const pageNumber of visiblePages) {
+                renderPage(pageNumber);
             }
         };
 
-        const onProgress = (progressData) => {
+        // Cargar el PDF
+        const loadPDF = async () => {
+            pdfDoc = await pdfjsLib.getDocument({ url, onProgress: updateProgress }).promise;
+
+            // Ocultar el indicador de carga cuando el documento esté listo
+            loadingIndicator.style.display = 'none';
+
+            // Renderizar la primera página para dar feedback inmediato
+            renderPage(1);
+
+            // Escuchar eventos de scroll para renderizado progresivo
+            container.addEventListener('scroll', () => {
+                requestAnimationFrame(renderVisiblePages);
+            });
+
+            // Renderizar las páginas iniciales visibles
+            renderVisiblePages();
+        };
+
+        // Actualizar barra de progreso
+        const updateProgress = (progressData) => {
             const percent = (progressData.loaded / progressData.total) * 100;
             progressBar.style.width = percent + '%';
         };
 
-        const onLoadPDF = (pdf) => {
-            loadingIndicator.style.display = 'none'; // Ocultar indicador de carga
-            renderPDF(pdf);
-        };
-
-        pdfjsLib.getDocument({ url, onProgress }).promise.then(onLoadPDF);
-
-        // Mostrar el indicador de carga mientras se carga el PDF
+        // Mostrar el indicador de carga y cargar el PDF
         loadingIndicator.style.display = 'block';
+        loadPDF();
     </script>
 </body>
 </html>
